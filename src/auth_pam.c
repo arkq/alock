@@ -88,7 +88,7 @@ static int module_authenticate(const char *pass) {
     int retval;
 
     password = pass;
-    retval = pam_start("login", username, &conv, &pam_handle);
+    retval = pam_start("system-auth", username, &conv, &pam_handle);
 
     if (retval == PAM_SUCCESS)
         retval = pam_set_item(pam_handle, PAM_TTY, ttyname(0));
