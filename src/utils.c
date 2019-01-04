@@ -269,9 +269,9 @@ int alock_grayscale_image(XImage *image,
 
     union {
         struct __attribute__ ((packed)) {
-            uint8_t red   : 5;
-            uint8_t green : 6;
-            uint8_t blue  : 5;
+            uint16_t red   : 5;
+            uint16_t green : 6;
+            uint16_t blue  : 5;
         } v16;
         struct __attribute__ ((packed)) {
             uint8_t red;
