@@ -126,7 +126,7 @@ static void module_loadargs(const char *args) {
         }
         if (strstr(arg, "service=") == arg) {
             free(service);
-            service = strdup(&arg[7]);
+            service = strdup(&arg[8]);
         }
     }
 
