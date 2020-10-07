@@ -17,6 +17,7 @@
 #include "alock.h"
 
 #include <string.h>
+#include <crypt.h>
 #include <unistd.h>
 #include <errno.h>
 #include <grp.h>
