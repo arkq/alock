@@ -27,9 +27,6 @@
 #include <X11/Xproto.h>
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
-#if HAVE_XMISC
-# include <X11/extensions/xf86misc.h>
-#endif
 
 
 extern char **environ;
@@ -641,23 +638,6 @@ int main(int argc, char **argv) {
 
     }
 
-#if HAVE_XMISC
-    int xf86misc_major = -1;
-    int xf86misc_minor = -1;
-
-    if (XF86MiscQueryVersion(display, &xf86misc_major, &xf86misc_minor) == True) {
-
-        if (xf86misc_major >= 0 && xf86misc_minor >= 5 &&
-                XF86MiscSetGrabKeysState(display, False) == MiscExtGrabStateLocked) {
-
-            fprintf(stderr, "error: unable to disable Xorg hotkeys to remove grabs\n");
-            goto return_failure;
-        }
-
-        fprintf(stderr, "info: disabled AllowDeactivateGrabs and AllowClosedownGrabs\n");
-    }
-#endif /* HAVE_XMISC */
-
     /* raise our background window and grab input, if this action has failed,
      * we are not able to lock the screen, then we're fucked... */
     if (lockDisplay(display, &modules))
@@ -673,13 +653,6 @@ return_failure:
     retval = EXIT_FAILURE;
 
 return_success:
-
-#if HAVE_XMISC
-    if (xf86misc_major >= 0 && xf86misc_minor >= 5) {
-        XF86MiscSetGrabKeysState(display, True);
-        XFlush(display);
-    }
-#endif
 
     modules.auth->m.free();
     modules.cursor->m.free();

@@ -27,11 +27,6 @@ PKG_CHECK_MODULES([XEXT], [xext],
 	[AC_DEFINE([HAVE_XEXT], [1], [Define to 1 if you have X Ext library.])],
 	[#skip])
 
-# check for the XFree86 Misc Extension library
-PKG_CHECK_MODULES([XXF86MISC], [xxf86misc],
-	[AC_DEFINE([HAVE_XMISC], [1], [Define to 1 if you have X Misc library.])],
-	[#skip])
-
 # support for the PAM library
 AC_ARG_ENABLE([pam],
 	[AS_HELP_STRING([--enable-pam], [enable PAM support])])
