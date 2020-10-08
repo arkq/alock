@@ -73,6 +73,8 @@ static int module_init(Display *dpy) {
         unsigned int h = 0;
         Pixmap cursor_pm = None;
 
+        data.display = dpy;
+
 #if ENABLE_IMLIB2
         {
             Imlib_Image img;
