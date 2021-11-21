@@ -1,0 +1,45 @@
+name: CI - Build and Test
+on:
+  push:
+  pull_request:
+    branches: [ master ]
+jobs:
+  build:
+    strategy:
+      matrix:
+        features:
+        - --enable-debug --enable-pam --enable-passwd --enable-hash
+        - --enable-debug --enable-xrender --enable-xcursor --enable-xpm
+        - --enable-imlib2 --with-dunst --with-xbacklight
+      fail-fast: false
+    runs-on: ubuntu-latest
+    steps:
+    - name: Install Dependencies
+      run: |
+        sudo apt update
+        sudo apt install --yes --quiet --no-install-recommends \
+          libcrypt-dev \
+          libgcrypt20-dev \
+          libimlib2-dev \
+          libpam0g-dev \
+          libx11-dev \
+          libxcursor-dev \
+          libxext-dev \
+          libxpm-dev \
+          libxrender-dev
+    - uses: actions/checkout@v2
+    - name: Create Build Environment
+      run: |
+        mkdir -p ${{ github.workspace }}/{build,m4}
+        autoreconf --install
+    - name: Configure GNU Automake
+      working-directory: ${{ github.workspace }}/build
+      run: |
+        ${{ github.workspace }}/configure \
+          ${{ matrix.features }}
+    - name: Build
+      working-directory: ${{ github.workspace }}/build
+      run: make && make check TESTS=
+    - name: Run Test
+      working-directory: ${{ github.workspace }}/build
+      run: make check

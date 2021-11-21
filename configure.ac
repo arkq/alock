@@ -1,5 +1,5 @@
 # alock - configure.ac
-# Copyright (c) 2014 - 2017 Arkadiusz Bokowy
+# Copyright (c) 2014 - 2021 Arkadiusz Bokowy
 
 AC_PREREQ([2.59])
 AC_INIT([alock], [2.3.1], [arkadiusz.bokowy@gmail.com])
@@ -34,7 +34,7 @@ AM_CONDITIONAL([ENABLE_PAM], [test "x$enable_pam" = "xyes"])
 AM_COND_IF([ENABLE_PAM], [
 	AC_CHECK_HEADERS([security/pam_appl.h],
 		[], [AC_MSG_ERROR([pam_appl.h header not found])])
-	AC_CHECK_LIB([pam], [pam_start],
+	AC_SEARCH_LIBS([pam_start], [pam],
 		[], [AC_MSG_ERROR([pam library not found])])
 	AC_DEFINE([ENABLE_PAM], [1], [Define to 1 if PAM is enabled.])
 ])
@@ -51,7 +51,7 @@ AM_CONDITIONAL([ENABLE_PASSWD], [test "x$enable_passwd" = "xyes"])
 AM_COND_IF([ENABLE_PASSWD], [
 	AC_CHECK_HEADERS([shadow.h],
 		[], [AC_MSG_ERROR([shadow.h header not found])])
-	AC_CHECK_LIB([crypt], [crypt],
+	AC_SEARCH_LIBS([crypt], [crypt],
 		[], [AC_MSG_ERROR([crypt library not found])])
 	AC_DEFINE([ENABLE_PASSWD], [1], [Define to 1 if passwd is enabled.])
 ])
@@ -63,7 +63,7 @@ AM_CONDITIONAL([ENABLE_HASH], [test "x$enable_hash" = "xyes"])
 AM_COND_IF([ENABLE_HASH], [
 	AC_CHECK_HEADERS([gcrypt.h],
 		[], [AC_MSG_ERROR([gcrypt.h header not found])])
-	AC_CHECK_LIB([gcrypt], [gcry_md_open],
+	AC_SEARCH_LIBS([gcry_md_open], [gcrypt],
 		[], [AC_MSG_ERROR([gcrypt library not found])])
 	AC_DEFINE([ENABLE_HASH], [1], [Define to 1 if hash is enabled.])
 ])
@@ -74,7 +74,7 @@ AC_ARG_ENABLE([xrender],
 AM_CONDITIONAL([ENABLE_XRENDER], [test "x$enable_xrender" = "xyes"])
 AM_COND_IF([ENABLE_XRENDER], [
 	PKG_CHECK_MODULES([XRENDER], [xrender])
-	AC_CHECK_LIB([m], [exp],
+	AC_SEARCH_LIBS([exp], [m],
 		[], [AC_MSG_ERROR([math library not found])])
 	AC_DEFINE([ENABLE_XRENDER], [1], [Define to 1 if Xrender is enabled.])
 ])
