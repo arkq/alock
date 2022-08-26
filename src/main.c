@@ -572,7 +572,7 @@ int main(int argc, char **argv) {
 
 #if WITH_DUNST
     /* pause notification daemon */
-    system("pkill -x -SIGUSR1 dunst");
+    system("pkill -SIGUSR1 -x dunst");
 #endif
 
     { /* try to initialize selected modules */
@@ -664,7 +664,7 @@ return_success:
 
 #if WITH_DUNST
     /* resume notification daemon */
-    system("pkill -x -SIGUSR2 dunst");
+    system("pkill -SIGUSR2 -x dunst");
 #endif
 
     return retval;
