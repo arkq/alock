@@ -65,13 +65,13 @@ static int module_init(Display *display) {
 }
 
 static int module_authenticate(const char *pass) {
+
     char *cpw;
 
     if (pass == NULL || pwd_entry == NULL)
         return -1;
 
     cpw = crypt(pass, pwd_entry->pw_passwd);
-
     if (cpw == NULL)
         return -1;
 
