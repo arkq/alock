@@ -1,8 +1,8 @@
 # alock - configure.ac
-# Copyright (c) 2014 - 2021 Arkadiusz Bokowy
+# Copyright (c) 2014 - 2022 Arkadiusz Bokowy
 
 AC_PREREQ([2.59])
-AC_INIT([alock], [2.3.1], [arkadiusz.bokowy@gmail.com])
+AC_INIT([alock], [2.5.1], [arkadiusz.bokowy@gmail.com])
 AM_INIT_AUTOMAKE([foreign -Wall -Werror])
 
 AC_CONFIG_HEADERS([config.h])

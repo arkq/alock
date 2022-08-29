@@ -139,7 +139,7 @@ static float getBacklightBrightness(void) {
 
     FILE *f;
     char str[16];
-    float value;
+    float value = -1;
 
     if ((f = popen("xbacklight", "r")) == NULL)
         return -1;
@@ -167,7 +167,7 @@ static void setBacklightBrightness(float value) {
      * control to be returned to our own process immediately - we're not
      * interested in the return value of the child process very much. */
 
-    sprintf(_value, "%f", value);
+    snprintf(_value, sizeof(_value), "%.2f", value);
     if (posix_spawnp(&pid, xbacklight, NULL, NULL, argv, environ) == 0)
         waitpid(pid, &status, WNOHANG);
 
