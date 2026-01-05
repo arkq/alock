@@ -26,7 +26,6 @@
 
 
 static const char *username = NULL;
-static const char *password = NULL;
 static char *service = NULL;
 
 
@@ -43,11 +42,12 @@ static int alock_auth_pam_conv(int num_msg,
     if (*response == NULL)
         return PAM_CONV_ERR;
 
+    const char *password = (const char *)appdata_ptr;
     int i;
     for (i = 0; i < num_msg; i++) {
         switch (msgs[i]->msg_style) {
         case PAM_PROMPT_ECHO_OFF:
-            (*response)[i].resp = strdup(password);
+            (*response)[i].resp = password ? strdup(password) : NULL;
             (*response)[i].resp_retcode = 0;
             break;
         case PAM_ERROR_MSG:
@@ -89,7 +89,10 @@ static int module_authenticate(const char *pass) {
     };
     int retval;
 
-    password = pass;
+    /* Pass the password to the conversation via appdata_ptr. Do not
+     * store it in a global variable. The `pass` buffer is owned by the
+     * caller and is cleared by the caller after authentication. */
+    conv.appdata_ptr = (void *)pass;
     retval = pam_start(service, username, &conv, &pam_handle);
 
     if (retval == PAM_SUCCESS)
