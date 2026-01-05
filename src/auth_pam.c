@@ -89,7 +89,7 @@ static int module_authenticate(const char *pass) {
     };
     int retval;
 
-    /* pass the password to the conversation via appdata_ptr; do not
+    /* Pass the password to the conversation via appdata_ptr. Do not
      * store it in a global variable. The `pass` buffer is owned by the
      * caller and is cleared by the caller after authentication. */
     conv.appdata_ptr = (void *)pass;
