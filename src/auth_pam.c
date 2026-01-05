@@ -47,10 +47,7 @@ static int alock_auth_pam_conv(int num_msg,
     for (i = 0; i < num_msg; i++) {
         switch (msgs[i]->msg_style) {
         case PAM_PROMPT_ECHO_OFF:
-            if (password)
-                (*response)[i].resp = strdup(password);
-            else
-                (*response)[i].resp = NULL;
+            (*response)[i].resp = password ? strdup(password) : NULL;
             (*response)[i].resp_retcode = 0;
             break;
         case PAM_ERROR_MSG:
