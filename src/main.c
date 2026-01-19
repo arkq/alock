@@ -16,6 +16,7 @@
 #include <locale.h>
 #include <signal.h>
 #include <spawn.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -180,36 +181,126 @@ static int lockDisplay(Display *display, struct aModules *modules) {
 
     Window window;
     Cursor cursor;
-    int i;
 
-    for (i = 0; i < ScreenCount(display); i++) {
+    int nscreens = ScreenCount(display);
+    Window *bgwins = calloc(nscreens, sizeof(*bgwins));
 
-        /* raise background window */
-        if ((window = modules->background->getwindow(i)) != None) {
+    int bgcount = 0;
 
-            Window window_input;
+    if (bgwins == NULL) {
+        fprintf(stderr, "alock: error window out of memory\n");
+        return -1;
+    }
 
-            if ((window_input = modules->input->getwindow(i)) != None)
-                XReparentWindow(display, window_input, window, 0, 0);
+    /* Raise/map background windows and remember them */
+    for (int i = 0; i < nscreens; i++) {
 
-            XMapWindow(display, window);
-            XRaiseWindow(display, window);
+        Window bg = modules->background->getwindow(i);
+        if (bg != None) {
 
+            Window window_input = modules->input->getwindow(i);
+            if (window_input != None)
+                XReparentWindow(display, window_input, bg, 0, 0);
+
+            /* Listen for paint-related events from the background window */
+            XSelectInput(display, bg, ExposureMask | StructureNotifyMask | VisibilityChangeMask);
+
+            XMapWindow(display, bg);
+            XRaiseWindow(display, bg);
+
+            bgwins[bgcount++] = bg;
         }
 
         /* receive notification about root window geometry change */
         XSelectInput(display, RootWindow(display, i), StructureNotifyMask);
     }
 
+    /*
+     * Ensure requests are processed, then wait briefly for at least one
+     * background window to become viewable / paint.
+     */
+    XSync(display, False);
+
+    if (bgcount > 0) {
+
+        unsigned long start = alock_mtime();
+        bool painted = false;
+
+        /*
+         * Upper bound to avoid blocking forever; X11 gives no guarantee that
+         * expose or visibility events will ever arrive.
+         */
+        while (alock_mtime() - start < 500) {
+
+            XEvent ev;
+
+            /* Pump events; do not block hard forever */
+            while (XCheckMaskEvent(display,
+                        ExposureMask | StructureNotifyMask | VisibilityChangeMask,
+                        &ev)) {
+
+                /* Only accept events from one of our background windows */
+                Window src = None;
+                if (ev.type == Expose)
+                    src = ev.xexpose.window;
+                else if (ev.type == VisibilityNotify)
+                    src = ev.xvisibility.window;
+                else
+                    /*
+                    * Intentionally drain non-paint-related events (e.g. StructureNotify)
+                    * from the queue; they are not relevant to our painting check.
+                    */
+                    continue;
+
+                /*
+                * Only treat paint-related events from our own background windows as
+                * meaningful; X11 may deliver expose/visibility events for unrelated
+                * windows (e.g. root or WM-managed windows).
+                */
+                for (int j = 0; j < bgcount; j++)
+                    if (bgwins[j] == src) {
+                        painted = true;
+                        break;
+                    }
+
+                if (painted)
+                    break;
+            }
+
+            if (painted)
+                break;
+
+            /*
+             * Yield briefly to let the server/compositor make progress without
+             * busy-spinning while waiting for paint-related events.
+             */
+            usleep(10000);
+        }
+
+        /* Final sync before cursor/grab */
+        XSync(display, False);
+    }
+
+    free(bgwins);
+
     /* grab pointer and keyboard from the default screen */
     window = DefaultRootWindow(display);
-    cursor = modules->cursor->getcursor();
 
-    if (XGrabPointer(display, window, False, None, GrabModeAsync, GrabModeAsync, None,
-                cursor, CurrentTime) != GrabSuccess) {
+    /*
+     * Grab pointer first without a custom cursor, then switch to the real cursor.
+     * This reduces "save-under" capturing pre-lock pixels on some servers/drivers.
+     */
+    if (XGrabPointer(display, window, False, 0,
+                GrabModeAsync, GrabModeAsync, None,
+                None, CurrentTime) != GrabSuccess) {
         fprintf(stderr, "error: grab pointer failed\n");
         return -1;
     }
+
+    XSync(display, False);
+
+    cursor = modules->cursor->getcursor();
+    XChangeActivePointerGrab(display, 0, cursor, CurrentTime);
 
     /* try to grab 2 times, another process (windowmanager) may have grabbed
      * the keyboard already */
