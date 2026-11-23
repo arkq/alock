@@ -27,7 +27,7 @@ jobs:
           libxext-dev \
           libxpm-dev \
           libxrender-dev
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v7
     - name: Create Build Environment
       run: |
         mkdir -p ${{ github.workspace }}/{build,m4}
