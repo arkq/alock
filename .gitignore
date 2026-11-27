@@ -38,3 +38,13 @@ config.h.in
 *.d
 config.mk
 config.log
+
+# Build outputs
+/Makefile
+/config.h
+/config.status
+/stamp-h1
+doc/Makefile
+src/Makefile
+src/.deps/
+src/alock

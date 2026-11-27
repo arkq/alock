@@ -10,13 +10,13 @@
  */
 
 #include "alock.h"
+#include "sw_cursor.h"
 
 #include <ctype.h>
 #include <getopt.h>
 #include <locale.h>
 #include <signal.h>
 #include <spawn.h>
-#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -31,6 +31,7 @@
 
 
 extern char **environ;
+
 
 static struct aModuleAuth *alock_modules_auth[] = {
 #if ENABLE_PAM
@@ -175,6 +176,43 @@ static void setBacklightBrightness(float value) {
 }
 #endif /* WITH_XBLIGHT */
 
+/* Polls up to timeout_ms for Expose/VisibilityNotify from any of wins[]. */
+static void waitForPaint(Display *display, Window *wins, int nwins,
+                         unsigned long timeout_ms) {
+
+    unsigned long start = alock_mtime();
+
+    while (alock_mtime() - start < timeout_ms) {
+
+        XEvent ev;
+
+        while (XCheckMaskEvent(display,
+                    ExposureMask | StructureNotifyMask | VisibilityChangeMask,
+                    &ev)) {
+
+            Window src = None;
+            if (ev.type == Expose)
+                src = ev.xexpose.window;
+            else if (ev.type == VisibilityNotify)
+                src = ev.xvisibility.window;
+            else
+                /* drain StructureNotify; not relevant to paint state */
+                continue;
+
+            for (int j = 0; j < nwins; j++)
+                if (wins[j] == src)
+                    return;
+        }
+
+        usleep(10000);
+    }
+}
+
+/* Software cursor needs image data from the cursor module and XRender at runtime. */
+static int useSwCursor(Display *display, struct aModules *modules) {
+    return modules->cursor->getimage() != NULL && alock_check_xrender(display);
+}
+
 /* Lock current display and grab pointer and keyboard. On successful
  * lock this function returns 0, otherwise -1. */
 static int lockDisplay(Display *display, struct aModules *modules) {
@@ -215,92 +253,50 @@ static int lockDisplay(Display *display, struct aModules *modules) {
         XSelectInput(display, RootWindow(display, i), StructureNotifyMask);
     }
 
-    /*
-     * Ensure requests are processed, then wait briefly for at least one
-     * background window to become viewable / paint.
-     */
+    /* Flush requests, then wait for bg windows to paint before grabbing. */
     XSync(display, False);
 
-    if (bgcount > 0) {
+    if (bgcount > 0)
+        waitForPaint(display, bgwins, bgcount, 500);
 
-        unsigned long start = alock_mtime();
-        bool painted = false;
-
-        /*
-         * Upper bound to avoid blocking forever; X11 gives no guarantee that
-         * expose or visibility events will ever arrive.
-         */
-        while (alock_mtime() - start < 500) {
-
-            XEvent ev;
-
-            /* Pump events; do not block hard forever */
-            while (XCheckMaskEvent(display,
-                        ExposureMask | StructureNotifyMask | VisibilityChangeMask,
-                        &ev)) {
-
-                /* Only accept events from one of our background windows */
-                Window src = None;
-                if (ev.type == Expose)
-                    src = ev.xexpose.window;
-                else if (ev.type == VisibilityNotify)
-                    src = ev.xvisibility.window;
-                else
-                    /*
-                    * Intentionally drain non-paint-related events (e.g. StructureNotify)
-                    * from the queue; they are not relevant to our painting check.
-                    */
-                    continue;
-
-                /*
-                * Only treat paint-related events from our own background windows as
-                * meaningful; X11 may deliver expose/visibility events for unrelated
-                * windows (e.g. root or WM-managed windows).
-                */
-                for (int j = 0; j < bgcount; j++)
-                    if (bgwins[j] == src) {
-                        painted = true;
-                        break;
-                    }
-
-                if (painted)
-                    break;
-            }
-
-            if (painted)
-                break;
-
-            /*
-             * Yield briefly to let the server/compositor make progress without
-             * busy-spinning while waiting for paint-related events.
-             */
-            usleep(10000);
-        }
-
-        /* Final sync before cursor/grab */
-        XSync(display, False);
-    }
+    /* Final sync before cursor/grab */
+    XSync(display, False);
 
     free(bgwins);
 
     /* grab pointer and keyboard from the default screen */
     window = DefaultRootWindow(display);
 
-    /*
-     * Grab pointer first without a custom cursor, then switch to the real cursor.
-     * This reduces "save-under" capturing pre-lock pixels on some servers/drivers.
-     */
-    if (XGrabPointer(display, window, False, 0,
-                GrabModeAsync, GrabModeAsync, None,
-                None, CurrentTime) != GrabSuccess) {
-        fprintf(stderr, "error: grab pointer failed\n");
-        return -1;
+    if (useSwCursor(display, modules)) {
+        /* Blank hw cursor + PointerMotionMask: no save-under for NVIDIA to corrupt. */
+        char no_data[8] = { 0 };
+        XColor black = { 0 };
+        Pixmap blank_pm = XCreateBitmapFromData(display, window, no_data, 8, 8);
+        cursor = XCreatePixmapCursor(display, blank_pm, blank_pm, &black, &black, 0, 0);
+        XFreePixmap(display, blank_pm);
+
+        if (XGrabPointer(display, window, False, PointerMotionMask,
+                    GrabModeAsync, GrabModeAsync, None,
+                    cursor, CurrentTime) != GrabSuccess) {
+            XFreeCursor(display, cursor);
+            fprintf(stderr, "error: grab pointer failed\n");
+            return -1;
+        }
+        XFreeCursor(display, cursor);
+    } else {
+        /* Legacy path: grab without cursor first, then swap to ARGB cursor. */
+        if (XGrabPointer(display, window, False, 0,
+                    GrabModeAsync, GrabModeAsync, None,
+                    None, CurrentTime) != GrabSuccess) {
+            fprintf(stderr, "error: grab pointer failed\n");
+            return -1;
+        }
+
+        XSync(display, False);
+
+        cursor = modules->cursor->getcursor();
+        XChangeActivePointerGrab(display, 0, cursor, CurrentTime);
     }
-
-    XSync(display, False);
-
-    cursor = modules->cursor->getcursor();
-    XChangeActivePointerGrab(display, 0, cursor, CurrentTime);
 
     /* try to grab 2 times, another process (windowmanager) may have grabbed
      * the keyboard already */
@@ -317,7 +313,53 @@ static int lockDisplay(Display *display, struct aModules *modules) {
     return 0;
 }
 
-static void eventLoop(Display *display, struct aModules *modules) {
+#if ENABLE_XRENDER
+/* Repaint bg windows and re-stamp software cursor; blank hw cursor means no NVIDIA sprite corruption. */
+static void refreshSwCursorAfterResume(Display *display, struct aModules *modules,
+                                       struct swCursor *swc) {
+    int nscreens = ScreenCount(display);
+    Window bgwins[nscreens];
+    int bgcount = 0;
+
+    for (int i = 0; i < nscreens; i++) {
+        Window bg = modules->background->getwindow(i);
+        if (bg != None) {
+            XRaiseWindow(display, bg);
+            XClearArea(display, bg, 0, 0, 0, 0, True);
+            bgwins[bgcount++] = bg;
+        }
+    }
+    XSync(display, False);
+    if (bgcount > 0)
+        waitForPaint(display, bgwins, bgcount, 1000);
+
+    swCursorRestamp(swc);
+    XFlush(display);
+}
+
+/* Detect CLOCK_BOOTTIME jump → refresh sw cursor; no-op when swc is NULL (opaque cursors have no bleed-through). */
+static void pollResumeState(Display *display, struct aModules *modules,
+                            struct swCursor *swc,
+                            unsigned long *last_time) {
+    unsigned long now = alock_mtime();
+    if (now - *last_time > 500 && swc) {
+        refreshSwCursorAfterResume(display, modules, swc);
+        now = alock_mtime();
+    }
+    *last_time = now;
+}
+
+#else /* !ENABLE_XRENDER */
+
+static inline void pollResumeState(Display *display, struct aModules *modules,
+                                   struct swCursor *swc,
+                                   unsigned long *last_time)
+    { (void)display; (void)modules; (void)swc; *last_time = alock_mtime(); }
+
+#endif /* ENABLE_XRENDER */
+
+static void eventLoop(Display *display, struct aModules *modules,
+                      struct swCursor *swc) {
 
     XEvent ev;
     KeySym ks;
@@ -326,6 +368,7 @@ static void eventLoop(Display *display, struct aModules *modules) {
     unsigned int clen;
     unsigned int pass_pos = 0, pass_len = 0;
     unsigned long keypress_time = 0;
+    unsigned long last_time = alock_mtime();
 
     /* if possible do not page this address to the swap area */
     mlock(pass, sizeof(pass));
@@ -343,6 +386,20 @@ static void eventLoop(Display *display, struct aModules *modules) {
                     keypress_time = 0;
                 }
 
+                /* Drain motion and Expose events; restamp cursor if bg was repainted. */
+                if (swc) {
+                    XEvent mev;
+                    while (XCheckMaskEvent(display, PointerMotionMask, &mev))
+                        swCursorMove(swc, mev.xmotion.x, mev.xmotion.y);
+                    int need_restamp = 0;
+                    while (XCheckWindowEvent(display, swCursorGetBgWin(swc), ExposureMask, &mev))
+                        need_restamp = 1;
+                    if (need_restamp)
+                        swCursorRestamp(swc);
+                }
+
+                pollResumeState(display, modules, swc, &last_time);
+
                 /* wait a bit */
                 usleep(25000);
                 continue;
@@ -356,8 +413,25 @@ static void eventLoop(Display *display, struct aModules *modules) {
                 setBacklightBrightness(0);
 #endif /* WITH_XBLIGHT */
 
-            /* block until any key press event arrives */
-            XMaskEvent(display, KeyPressMask | StructureNotifyMask, &ev);
+            if (swc) {
+                /* poll for events so resume can be detected via clock jump */
+                while (XCheckMaskEvent(display, KeyPressMask | StructureNotifyMask, &ev) == False) {
+                    /* Drain motion and Expose events; restamp cursor if bg was repainted. */
+                    XEvent mev;
+                    while (XCheckMaskEvent(display, PointerMotionMask, &mev))
+                        swCursorMove(swc, mev.xmotion.x, mev.xmotion.y);
+                    int need_restamp = 0;
+                    while (XCheckWindowEvent(display, swCursorGetBgWin(swc), ExposureMask, &mev))
+                        need_restamp = 1;
+                    if (need_restamp)
+                        swCursorRestamp(swc);
+                    pollResumeState(display, modules, swc, &last_time);
+                    usleep(16000);
+                }
+            }
+            else
+                /* no software cursor, nothing to refresh on resume */
+                XMaskEvent(display, KeyPressMask | StructureNotifyMask, &ev);
 
 #if WITH_XBLIGHT
             /* restore original backlight brightness value */
@@ -365,6 +439,8 @@ static void eventLoop(Display *display, struct aModules *modules) {
                 setBacklightBrightness(modules->backlight);
 #endif /* WITH_XBLIGHT */
         }
+
+        last_time = alock_mtime();
 
         switch (ev.type) {
         case KeyPress:
@@ -493,12 +569,6 @@ static void eventLoop(Display *display, struct aModules *modules) {
             debug("received configure notify event");
             break;
 
-#if 0
-        case Expose:
-            XClearWindow(dpy, ((XExposeEvent*)&ev)->window);
-            break;
-#endif
-
         }
     }
 }
@@ -518,6 +588,7 @@ int main(int argc, char **argv) {
 
     Display *display;
     struct aModules modules;
+    struct swCursor *swc = NULL;
     int retval;
 
     const char *args_auth = NULL;
@@ -734,8 +805,36 @@ int main(int argc, char **argv) {
     if (lockDisplay(display, &modules))
         goto return_failure;
 
+    /* If the cursor module provides image data, set up the software overlay
+     * on the primary screen's background window. */
+    if (useSwCursor(display, &modules)) {
+        Window bg0 = modules.background->getwindow(0);
+        if (bg0 != None)
+            swc = swCursorCreate(display, bg0, modules.cursor->getimage());
+        if (!swc) {
+            /* Pointer is grabbed with a blank cursor; swap in the module
+             * cursor and drop PointerMotionMask. */
+            XChangeActivePointerGrab(display, 0,
+                    modules.cursor->getcursor(), CurrentTime);
+            fprintf(stderr, "alock: software cursor setup failed, using hardware cursor\n");
+        }
+    }
+
+    /* Stamp the cursor at the current pointer position so it is visible
+     * immediately without waiting for the first MotionNotify. */
+    if (swc) {
+        Window root_ret, child_ret;
+        int root_x, root_y, win_x, win_y;
+        unsigned int mask;
+        if (XQueryPointer(display, DefaultRootWindow(display),
+                          &root_ret, &child_ret,
+                          &root_x, &root_y, &win_x, &win_y, &mask))
+            swCursorMove(swc, root_x, root_y);
+        XFlush(display);
+    }
+
     debug("entering main event loop");
-    eventLoop(display, &modules);
+    eventLoop(display, &modules, swc);
 
     retval = EXIT_SUCCESS;
     goto return_success;
@@ -745,6 +844,7 @@ return_failure:
 
 return_success:
 
+    swCursorDestroy(swc);
     modules.auth->m.free();
     modules.cursor->m.free();
     modules.input->m.free();

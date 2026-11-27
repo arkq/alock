@@ -16,6 +16,7 @@
 # include "config.h"
 #endif
 
+#include <stdint.h>
 #include <stdio.h>
 #include <X11/Xlib.h>
 #include <X11/Xresource.h>
@@ -57,9 +58,19 @@ struct aModuleBackground {
     Window (*getwindow)(int screen);
 };
 
+/* Raw ARGB pixels exposed by image-based cursor modules for the software overlay. */
+struct aCursorImage {
+    unsigned int width, height;
+    int hot_x, hot_y;
+    uint32_t *pixels;   /* pre-multiplied ARGB, native byte order, w*h entries */
+};
+
 struct aModuleCursor {
     struct aModule m;
     Cursor (*getcursor)(void);
+    /* Returns pixel data for the software cursor overlay, or NULL for non-image
+     * modules (none, blank, glyph).  Pointer is valid for the module's lifetime. */
+    const struct aCursorImage *(*getimage)(void);
 };
 
 struct aModuleInput {

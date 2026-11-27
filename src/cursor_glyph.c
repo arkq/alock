@@ -230,6 +230,8 @@ static Cursor module_getcursor(void) {
     return data.cursor;
 }
 
+static const struct aCursorImage *module_getimage(void) { return NULL; }
+
 
 struct aModuleCursor alock_cursor_glyph = {
     { "glyph",
@@ -239,4 +241,5 @@ struct aModuleCursor alock_cursor_glyph = {
         module_free,
     },
     module_getcursor,
+    module_getimage,
 };

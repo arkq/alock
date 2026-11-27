@@ -31,6 +31,8 @@ static struct moduleData {
     Display *display;
     char *filename;
     Cursor cursor;
+    uint32_t *pixels;           /* saved ARGB buffer for software overlay */
+    struct aCursorImage image;
 } data = { 0 };
 
 
@@ -113,6 +115,14 @@ static int module_init(Display *dpy) {
 
                     XInitImage(&ximage);
 
+                    /* Save pixel buffer for software cursor overlay. */
+                    size_t npx = (size_t)w * h;
+                    data.pixels = malloc(npx * sizeof(*data.pixels));
+                    if (data.pixels) {
+                        memcpy(data.pixels, ximage.data, npx * sizeof(*data.pixels));
+                        data.image = (struct aCursorImage){ w, h, (int)w/2, (int)h/2, data.pixels };
+                    }
+
                     cursor_pm = XCreatePixmap(dpy, RootWindowOfScreen(screen), w, h, 32);
                     gc = XCreateGC(dpy, cursor_pm, 0, 0);
                     XPutImage(dpy, cursor_pm, gc, &ximage, 0, 0, 0, 0, w, h);
@@ -178,10 +188,16 @@ static void module_free() {
 
     free(data.filename);
     data.filename = NULL;
+    free(data.pixels);
+    data.pixels = NULL;
 }
 
 static Cursor module_getcursor(void) {
     return data.cursor;
+}
+
+static const struct aCursorImage *module_getimage(void) {
+    return data.pixels ? &data.image : NULL;
 }
 
 
@@ -193,4 +209,5 @@ struct aModuleCursor alock_cursor_image = {
         module_free,
     },
     module_getcursor,
+    module_getimage,
 };

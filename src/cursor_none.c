@@ -19,6 +19,8 @@ static Cursor module_getcursor(void) {
     return None;
 }
 
+static const struct aCursorImage *module_getimage(void) { return NULL; }
+
 
 struct aModuleCursor alock_cursor_none = {
     { "none",
@@ -28,4 +30,5 @@ struct aModuleCursor alock_cursor_none = {
         module_dummy_free,
     },
     module_getcursor,
+    module_getimage,
 };

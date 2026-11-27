@@ -13,6 +13,7 @@ alock_SOURCES = \
 	cursor_blank.c \
 	cursor_glyph.c \
 	utils.c \
+	sw_cursor.c \
 	main.c
 
 alock_CFLAGS = \
